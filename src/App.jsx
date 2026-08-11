@@ -1,121 +1,121 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import ReactMarkdown from 'react-markdown'
 import './App.css'
+import { interpretSaju } from './gemini'
 
 function App() {
-  const [count, setCount] = useState(0)
+  // 입력 state
+  const [name, setName] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [birthTime, setBirthTime] = useState('')
+  const [gender, setGender] = useState('')
+  const [calendarType, setCalendarType] = useState('solar')
+
+  // Gemini 결과 state
+  const [result, setResult] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // 사주 해석 버튼 클릭
+  async function handleInterpret() {
+    setLoading(true)
+    setError('')
+    setResult('')
+
+    try {
+      const text = await interpretSaju({
+        name,
+        birthDate,
+        birthTime,
+        gender,
+        calendarType,
+      })
+      setResult(text)
+    } catch (err) {
+      setError(err.message || '해석 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>윤정현의 사주</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+    <div className="app">
+      <h1>사주 정보 입력</h1>
+
+      <label className="field">
+        <span>이름</span>
+        <input
+          type="text"
+          placeholder="이름을 입력하세요"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+
+      <p className="preview">
+        {name || birthDate
+          ? `${name || '이름 미입력'}님의 사주${birthDate ? ` (${birthDate})` : ''}`
+          : '이름이나 생년월일을 입력하면 여기에 보여요'}
+      </p>
+
+      <label className="field">
+        <span>생년월일</span>
+        <input
+          type="date"
+          value={birthDate}
+          onChange={(e) => setBirthDate(e.target.value)}
+        />
+      </label>
+
+      <label className="field">
+        <span>태어난 시간</span>
+        <input
+          type="time"
+          value={birthTime}
+          onChange={(e) => setBirthTime(e.target.value)}
+        />
+      </label>
+
+      <label className="field">
+        <span>성별</span>
+        <select value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">선택하세요</option>
+          <option value="male">남성</option>
+          <option value="female">여성</option>
+        </select>
+      </label>
+
+      <label className="field">
+        <span>양력 / 음력</span>
+        <select
+          value={calendarType}
+          onChange={(e) => setCalendarType(e.target.value)}
         >
-          Count is {count}
-        </button>
-      </section>
+          <option value="solar">양력</option>
+          <option value="lunar">음력</option>
+        </select>
+      </label>
 
-      <div className="ticks"></div>
+      <button
+        type="button"
+        className="analyze-btn"
+        onClick={handleInterpret}
+        disabled={loading}
+      >
+        {loading ? '해석 중...' : '사주 기본 차트 해석하기'}
+      </button>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {error && <p className="error">{error}</p>}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      {result && (
+        <section className="result">
+          <h2>해석 결과</h2>
+          <div className="result-content">
+            <ReactMarkdown>{result}</ReactMarkdown>
+          </div>
+        </section>
+      )}
+    </div>
   )
 }
 
