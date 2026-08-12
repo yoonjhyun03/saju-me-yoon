@@ -21,6 +21,17 @@ function formatMeta({ birthDate, birthTime, gender, calendarType }) {
     .join(' · ')
 }
 
+function readingPayload({ name, birthDate, birthTime, gender, calendarType, result }) {
+  return {
+    name: name.trim() || '이름 미입력',
+    birth_date: birthDate || null,
+    birth_time: birthTime || null,
+    gender: gender || null,
+    calendar_type: calendarType,
+    result,
+  }
+}
+
 function App() {
   const [name, setName] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -30,6 +41,7 @@ function App() {
 
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [listError, setListError] = useState('')
   const [toast, setToast] = useState('')
@@ -44,7 +56,9 @@ function App() {
   const toastTimerRef = useRef(null)
 
   const isViewingSaved = Boolean(selectedId)
-  const canInterpret = Boolean(name.trim() && birthDate) && !loading
+  const busy = loading || saving
+  const canInterpret = Boolean(name.trim() && birthDate) && !busy
+  const canUpdate = Boolean(selectedId && name.trim() && birthDate && result) && !busy
 
   function showToast(message) {
     setToast(message)
@@ -82,6 +96,7 @@ function App() {
     resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [resultKey, result, selectedId])
 
+  // Create: 새 사주 해석 후 insert / 선택 중이면 결과까지 update
   async function handleInterpret() {
     if (!name.trim() || !birthDate) {
       setError('이름과 생년월일을 입력해 주세요.')
@@ -92,7 +107,6 @@ function App() {
     setLoading(true)
     setError('')
     setResult('')
-    setSelectedId(null)
 
     try {
       const text = await interpretSaju({
@@ -105,32 +119,132 @@ function App() {
       setResult(text)
       setResultKey((key) => key + 1)
 
-      const { data, error: saveError } = await supabase
+      const payload = readingPayload({
+        name,
+        birthDate,
+        birthTime,
+        gender,
+        calendarType,
+        result: text,
+      })
+
+      if (selectedId) {
+        const { data, error: updateError } = await supabase
+          .from('saju_readings')
+          .update(payload)
+          .eq('id', selectedId)
+          .select(
+            'id, name, birth_date, birth_time, gender, calendar_type, result, created_at',
+          )
+          .single()
+
+        if (updateError) {
+          throw new Error(`수정 실패: ${updateError.message}`)
+        }
+
+        setReadings((prev) =>
+          prev.map((item) => (item.id === data.id ? data : item)),
+        )
+        showToast('사주가 다시 해석되어 수정됐어요')
+      } else {
+        const { data, error: saveError } = await supabase
+          .from('saju_readings')
+          .insert(payload)
+          .select(
+            'id, name, birth_date, birth_time, gender, calendar_type, result, created_at',
+          )
+          .single()
+
+        if (saveError) {
+          throw new Error(`저장 실패: ${saveError.message}`)
+        }
+
+        setReadings((prev) => [data, ...prev])
+        setSelectedId(data.id)
+        showToast('사주가 저장됐어요')
+      }
+    } catch (err) {
+      setError(err.message || '해석 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Update: 현재 입력 + 결과로 선택한 행 수정
+  async function handleUpdate() {
+    if (!selectedId) return
+    if (!name.trim() || !birthDate) {
+      setError('이름과 생년월일을 입력해 주세요.')
+      return
+    }
+    if (!result) {
+      setError('수정하려면 해석 결과가 필요해요. 먼저 해석해 주세요.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+
+    try {
+      const { data, error: updateError } = await supabase
         .from('saju_readings')
-        .insert({
-          name: name.trim() || '이름 미입력',
-          birth_date: birthDate || null,
-          birth_time: birthTime || null,
-          gender: gender || null,
-          calendar_type: calendarType,
-          result: text,
-        })
+        .update(
+          readingPayload({
+            name,
+            birthDate,
+            birthTime,
+            gender,
+            calendarType,
+            result,
+          }),
+        )
+        .eq('id', selectedId)
         .select(
           'id, name, birth_date, birth_time, gender, calendar_type, result, created_at',
         )
         .single()
 
-      if (saveError) {
-        throw new Error(`저장 실패: ${saveError.message}`)
+      if (updateError) {
+        throw new Error(`수정 실패: ${updateError.message}`)
       }
 
-      setReadings((prev) => [data, ...prev])
-      setSelectedId(data.id)
-      showToast('사주가 저장됐어요')
+      setReadings((prev) =>
+        prev.map((item) => (item.id === data.id ? data : item)),
+      )
+      showToast('수정 내용을 저장했어요')
     } catch (err) {
-      setError(err.message || '해석 중 오류가 발생했습니다.')
+      setError(err.message || '수정 중 오류가 발생했습니다.')
     } finally {
-      setLoading(false)
+      setSaving(false)
+    }
+  }
+
+  // Delete
+  async function handleDelete() {
+    if (!selectedId) return
+    const ok = window.confirm('이 사주 기록을 삭제할까요?')
+    if (!ok) return
+
+    setSaving(true)
+    setError('')
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('saju_readings')
+        .delete()
+        .eq('id', selectedId)
+
+      if (deleteError) {
+        throw new Error(`삭제 실패: ${deleteError.message}`)
+      }
+
+      setReadings((prev) => prev.filter((item) => item.id !== selectedId))
+      handleNewSaju()
+      showToast('사주 기록을 삭제했어요')
+    } catch (err) {
+      setError(err.message || '삭제 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -179,7 +293,7 @@ function App() {
             type="button"
             className="sidebar-new-btn"
             onClick={handleNewSaju}
-            disabled={loading}
+            disabled={busy}
           >
             새 사주
           </button>
@@ -227,15 +341,36 @@ function App() {
 
         {isViewingSaved && (
           <div className="notice">
-            <p>저장된 사주를 보고 있어요. 새로 보려면 새 사주 만들기를 눌러 주세요.</p>
-            <button
-              type="button"
-              className="notice-btn"
-              onClick={handleNewSaju}
-              disabled={loading}
-            >
-              새 사주 만들기
-            </button>
+            <p>
+              저장된 사주를 보고 있어요. 입력값을 고친 뒤 수정 저장하거나, 삭제할 수
+              있어요.
+            </p>
+            <div className="notice-actions">
+              <button
+                type="button"
+                className="notice-btn"
+                onClick={handleNewSaju}
+                disabled={busy}
+              >
+                새 사주 만들기
+              </button>
+              <button
+                type="button"
+                className="update-btn"
+                onClick={handleUpdate}
+                disabled={!canUpdate}
+              >
+                {saving ? '저장 중...' : '수정 저장'}
+              </button>
+              <button
+                type="button"
+                className="delete-btn"
+                onClick={handleDelete}
+                disabled={busy}
+              >
+                삭제
+              </button>
+            </div>
           </div>
         )}
 
@@ -250,7 +385,7 @@ function App() {
               placeholder="이름을 입력하세요"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              disabled={loading}
+              disabled={busy}
               autoComplete="name"
             />
           </label>
@@ -269,7 +404,7 @@ function App() {
               type="date"
               value={birthDate}
               onChange={(e) => setBirthDate(e.target.value)}
-              disabled={loading}
+              disabled={busy}
             />
           </label>
 
@@ -279,7 +414,7 @@ function App() {
               type="time"
               value={birthTime}
               onChange={(e) => setBirthTime(e.target.value)}
-              disabled={loading}
+              disabled={busy}
             />
             <span className="field-hint">모르면 비워 두어도 돼요</span>
           </label>
@@ -290,7 +425,7 @@ function App() {
               <select
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
-                disabled={loading}
+                disabled={busy}
               >
                 <option value="">선택하세요</option>
                 <option value="male">남성</option>
@@ -303,7 +438,7 @@ function App() {
               <select
                 value={calendarType}
                 onChange={(e) => setCalendarType(e.target.value)}
-                disabled={loading}
+                disabled={busy}
               >
                 <option value="solar">양력</option>
                 <option value="lunar">음력</option>
@@ -316,7 +451,7 @@ function App() {
               type="button"
               className="new-btn"
               onClick={handleNewSaju}
-              disabled={loading}
+              disabled={busy}
             >
               새 사주 만들기
             </button>
@@ -326,7 +461,11 @@ function App() {
               onClick={handleInterpret}
               disabled={!canInterpret}
             >
-              {loading ? '해석 중...' : '사주 기본 차트 해석하기'}
+              {loading
+                ? '해석 중...'
+                : isViewingSaved
+                  ? '다시 해석해서 수정'
+                  : '사주 기본 차트 해석하기'}
             </button>
             {!name.trim() || !birthDate ? (
               <p className="actions-hint">이름과 생년월일을 입력하면 해석할 수 있어요</p>
@@ -339,7 +478,10 @@ function App() {
             <span className="loading-dot" />
             <div>
               <p className="loading-title">사주를 해석하는 중이에요</p>
-              <p className="loading-sub">잠시만 기다려 주세요. 완료되면 자동으로 저장됩니다.</p>
+              <p className="loading-sub">
+                잠시만 기다려 주세요. 완료되면 자동으로 {isViewingSaved ? '수정' : '저장'}
+                됩니다.
+              </p>
             </div>
           </div>
         )}
@@ -373,13 +515,42 @@ function App() {
               <ReactMarkdown>{result}</ReactMarkdown>
             </div>
             <footer className="result-footer">
-              <button
-                type="button"
-                className="new-btn"
-                onClick={handleNewSaju}
-              >
-                이어서 새 사주 만들기
-              </button>
+              {isViewingSaved ? (
+                <div className="result-footer-actions">
+                  <button
+                    type="button"
+                    className="update-btn"
+                    onClick={handleUpdate}
+                    disabled={!canUpdate}
+                  >
+                    {saving ? '저장 중...' : '수정 저장'}
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-btn"
+                    onClick={handleDelete}
+                    disabled={busy}
+                  >
+                    삭제
+                  </button>
+                  <button
+                    type="button"
+                    className="new-btn"
+                    onClick={handleNewSaju}
+                    disabled={busy}
+                  >
+                    이어서 새 사주 만들기
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="new-btn"
+                  onClick={handleNewSaju}
+                >
+                  이어서 새 사주 만들기
+                </button>
+              )}
             </footer>
           </section>
         )}
